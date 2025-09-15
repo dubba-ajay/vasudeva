@@ -1,0 +1,324 @@
+// Set DATABASE_URL in environment variables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Payments and platform models
+model Account {
+  id             String   @id @default(cuid())
+  type           String   // 'store' | 'freelancer'
+  ownerEmail     String
+  gateway        String   // 'razorpay' | 'stripe'
+  gatewayAccount String?  // sub-account / connected account id
+  kycStatus      String   @default("pending")
+  bankIfsc       String?
+  bankAccount    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+
+  payouts        Payout[]
+}
+
+model CommissionRule {
+  id            String   @id @default(cuid())
+  scopeType     String   // 'global' | 'store' | 'service' | 'freelancer'
+  scopeId       String?  // null for global
+  storePct      Int
+  freelancerPct Int
+  platformPct   Int
+  priority      Int      // higher wins when multiple match
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  bookingId    String
+  storeId      String
+  freelancerId String?
+  amount       Int      // in currency base (e.g., INR rupees)
+  tax          Int
+  total        Int
+  currency     String
+  gateway      String
+  gatewayRef   String?  // order id / payment intent id
+  status       String   // 'created' | 'authorized' | 'captured' | 'failed' | 'refunded'
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+
+  escrow       Escrow?
+  payouts      Payout[]
+  refunds      Refund[]
+  invoice      Invoice?
+}
+
+model Escrow {
+  id         String   @id @default(cuid())
+  paymentId  String   @unique
+  status     String   // 'pending' | 'released' | 'refunded' | 'partial_refunded'
+  createdAt  DateTime @default(now())
+  Payment    Payment  @relation(fields: [paymentId], references: [id])
+}
+
+model Payout {
+  id           String   @id @default(cuid())
+  paymentId    String
+  payeeType    String   // 'store' | 'freelancer' | 'platform'
+  payeeAccount String?  // Account.id
+  amount       Int
+  status       String   // 'pending' | 'paid' | 'failed'
+  gatewayRef   String?
+  date         DateTime @default(now())
+  Payment      Payment  @relation(fields: [paymentId], references: [id])
+  Account      Account? @relation(fields: [payeeAccount], references: [id])
+}
+
+model Refund {
+  id         String   @id @default(cuid())
+  paymentId  String
+  amount     Int
+  reason     String?
+  status     String   // 'succeeded' | 'failed'
+  gatewayRef String?
+  date       DateTime @default(now())
+  Payment    Payment  @relation(fields: [paymentId], references: [id])
+}
+
+model WebhookLog {
+  id         String   @id @default(cuid())
+  gateway    String
+  event      String
+  signature  String?
+  valid      Boolean
+  payload    Json
+  createdAt  DateTime @default(now())
+}
+
+model Invoice {
+  id         String   @id @default(cuid())
+  paymentId  String   @unique
+  pdfUrl     String?
+  data       Json
+  createdAt  DateTime @default(now())
+  Payment    Payment  @relation(fields: [paymentId], references: [id])
+}
+
+// Core user table synced from auth provider
+model User {
+  id        String   @id
+  email     String?  @unique
+  phone     String?  @unique
+  name      String?
+  role      String?  // 'customer' | 'owner' | 'freelancer' | 'admin'
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  Freelancer Freelancer?
+  stores     Store[]
+}
+
+// Marketplace models for stores, services, freelancers, availability and bookings
+model Store {
+  id                 String    @id @default(uuid())
+  ownerUserId        String?   // optional link to User
+  ownerUser          User?     @relation(fields: [ownerUserId], references: [id])
+  name               String
+  description        String?
+  address            String?
+  phone              String?
+  email              String?
+  city               String?
+  region             String?
+  lat                Float?
+  lng                Float?
+  serviceRadiusMeters Int?     // default store service radius
+  autoAssignEnabled  Boolean   @default(false)
+  claimWindowSeconds Int?      @default(300)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now())
+
+  services  StoreService[]
+  bookings  Booking[]
+  linkedFreelancers FreelancerStore[]
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  code        String   @unique   // e.g. haircut, makeup
+  name        String
+  defaultDurationMin Int @default(60)
+  defaultPriceCents Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+
+  storeServices StoreService[]
+  bookings      Booking[]
+}
+
+model StoreService {
+  id        String  @id @default(cuid())
+  store     Store   @relation(fields: [storeId], references: [id])
+  storeId   String
+  service   Service @relation(fields: [serviceId], references: [id])
+  serviceId String
+  enabled   Boolean @default(true)
+  priceCents Int?
+  durationMin Int?
+
+  @@unique([storeId, serviceId])
+}
+
+model Skill {
+  id    String   @id @default(cuid())
+  code  String   @unique
+  name  String
+  freelancers FreelancerSkill[]
+}
+
+model Freelancer {
+  id               String    @id @default(uuid())
+  userId           String?   @unique
+  user             User?     @relation(fields: [userId], references: [id])
+  name             String?
+  bio              String?
+  rating           Float?    @default(0)
+  homeRadiusMeters Int?      // how far for home jobs
+  locationLat      Float?
+  locationLng      Float?
+  workMode         String    @default("both") // 'salon'|'home'|'both'
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now())
+
+  skills           FreelancerSkill[]
+  linkedStores     FreelancerStore[]
+  availabilities   Availability[]
+  assignments      BookingAssignment[]
+}
+
+model FreelancerSkill {
+  id           String     @id @default(cuid())
+  freelancer   Freelancer @relation(fields: [freelancerId], references: [id])
+  freelancerId String
+  skill        Skill      @relation(fields: [skillId], references: [id])
+  skillId      String
+
+  @@unique([freelancerId, skillId])
+}
+
+model FreelancerStore {
+  id           String     @id @default(cuid())
+  freelancer   Freelancer @relation(fields: [freelancerId], references: [id])
+  freelancerId String
+  store        Store      @relation(fields: [storeId], references: [id])
+  storeId      String
+  approved     Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  @@unique([freelancerId, storeId])
+}
+
+model Availability {
+  id           String    @id @default(cuid())
+  freelancer   Freelancer @relation(fields: [freelancerId], references: [id])
+  freelancerId String
+  startAt      DateTime  // availability window start
+  endAt        DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([freelancerId, startAt, endAt])
+}
+
+model Booking {
+  id             String    @id @default(uuid())
+  storeId        String
+  store          Store     @relation(fields: [storeId], references: [id])
+  serviceId      String
+  service        Service   @relation(fields: [serviceId], references: [id])
+  customerUserId String?
+  locationLat    Float?    // for home bookings
+  locationLng    Float?
+  locationAddr   String?
+  startAt        DateTime
+  endAt          DateTime
+  durationMin    Int
+  priceCents     Int
+  locationType   String    // 'salon'|'home'
+  allowClaim     Boolean   @default(false)
+  status         String    @default("pending")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now())
+
+  assignments    BookingAssignment[]
+  @@index([storeId, status])
+  @@index([startAt, endAt])
+}
+
+model BookingAssignment {
+  id           String    @id @default(cuid())
+  bookingId    String
+  booking      Booking   @relation(fields: [bookingId], references: [id])
+  freelancerId String
+  freelancer   Freelancer @relation(fields: [freelancerId], references: [id])
+  status       String    // 'offered'|'accepted'|'rejected'|'cancelled'
+  offeredAt    DateTime  @default(now())
+  respondedAt   DateTime?
+  note         String?
+
+  @@index([bookingId])
+  @@index([freelancerId])
+  @@unique([bookingId, freelancerId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?  // could be user, freelancer, or owner
+  role      String?  // 'customer' | 'freelancer' | 'owner'
+  type      String
+  payload   Json
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Reviews & ratings for stores / freelancers / users
+model Review {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String?
+  rating    Int
+  title     String?
+  body      String?
+  createdAt DateTime @default(now())
+
+  @@index([storeId])
+}
+
+model SlotLock {
+  id           String   @id @default(cuid())
+  freelancerId String
+  bookingId    String?  // optional booking currently reserving the slot
+  date         DateTime
+  startTime    String
+  endTime      String
+  createdAt    DateTime @default(now())
+
+  @@index([freelancerId, date])
+}
+
+model AuthCredential {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  salt         String
+  role         String   // 'USER' | 'FREELANCER' | 'OWNER' | 'ADMIN'
+  userId       String?  // optional link to User.id or Freelancer.id/Store owner id
+  mustReset    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+}
