@@ -1,0 +1,8 @@
+| Variable                     | Value / Notes                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `VITE_API_BASE`              | `"https://<your-site>/.netlify/functions"` — points to your backend functions |
+| `VITE_SUPABASE_URL`          | `"https://<proj>.supabase.co"` — your Supabase project URL                    |
+| `VITE_SUPABASE_ANON_KEY`     | `"<anon-key>"` — public anon key for frontend DB queries                      |
+| `RAZORPAY_KEY_ID` (optional) | Public key for Razorpay frontend integration                                  |
+| `RAZORPAY_WEBHOOK_SECRET`    | Backend only — do NOT expose in frontend                                      |
+| `ADMIN_API_KEY`              | Backend only — for admin functions                                            |
