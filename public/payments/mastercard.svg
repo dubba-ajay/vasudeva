@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
+  <defs>
+    <style>.a{fill:#ff5f00}.b{fill:#eb001b}</style>
+  </defs>
+  <rect width="120" height="40" rx="6" fill="#fff" />
+  <g transform="translate(30,20)">
+    <circle cx="0" cy="0" r="12" class="b" />
+    <circle cx="14" cy="0" r="12" class="a" />
+  </g>
+  <text x="90" y="26" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#222" font-weight="700">Mastercard</text>
+</svg>
